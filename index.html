@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apple of Fortune</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    body {
+      background: radial-gradient(circle at center, #1e3c2f, #0c1a14);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+    }
+    .game-container {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+    }
+    .balance {
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: #ffd700;
+    }
+    .board {
+      display: flex;
+      flex-direction: column-reverse; /* حتى يبدأ اللعب من الأسفل للأعلى */
+      gap: 6px;
+      margin-bottom: 15px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      opacity: 0.4;
+      pointer-events: none;
+      transition: all 0.3s;
+    }
+    .row.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .row.completed {
+      opacity: 0.8;
+      pointer-events: none;
+    }
+    .multiplier {
+      width: 55px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      text-align: center;
+      background: #2a4736;
+      padding: 6px 4px;
+      border-radius: 6px;
+      color: #a3e635;
+    }
+    .cells {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+    }
+    .cell {
+      flex: 1;
+      aspect-ratio: 1;
+      background: #8b5a2b;
+      border: 2px solid #5c3a1e;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.4rem;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s, background-color 0.2s;
+    }
+    .row.active .cell:hover {
+      transform: scale(1.05);
+      background: #9d6833;
+    }
+    .cell.revealed-good {
+      background: #15803d;
+      border-color: #22c55e;
+    }
+    .cell.revealed-bad {
+      background: #b91c1c;
+      border-color: #ef4444;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bet-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bet-box input {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #111;
+      color: #fff;
+      font-size: 1rem;
+      text-align: center;
+    }
+    .action-btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .action-btn:active {
+      transform: scale(0.98);
+    }
+    .btn-start {
+      background: #22c55e;
+      color: #fff;
+    }
+    .btn-cashout {
+      background: #eab308;
+      color: #000;
+    }
+    .status-msg {
+      text-align: center;
+      min-height: 24px;
+      font-size: 0.95rem;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-container">
+    <div class="header">
+      <span>تفاحة الحظ 🍎</span>
+      <div class="balance">الرصيد: <span id="balance">1000</span> ج.م</div>
+    </div>
+
+    <!-- شبكة اللعب -->
+    <div class="board" id="board"></div>
+
+    <div class="status-msg" id="statusMsg">حدد الرهان واضغط ابدأ</div>
+
+    <div class="controls">
+      <div class="bet-box">
+        <label>الرهان:</label>
+        <input type="number" id="betAmount" value="20" min="5" step="5">
+      </div>
+      <button class="action-btn btn-start" id="mainBtn">ابدأ اللعب</button>
+    </div>
+  </div>
+
+  <script>
+    // إعدادات الصفوف والمضاعفات وعدد التفاح الفاسد في كل مرحلة
+    const ROW_CONFIGS = [
+      { mult: 1.23, badCount: 1 },
+      { mult: 1.54, badCount: 1 },
+      { mult: 1.93, badCount: 1 },
+      { mult: 2.41, badCount: 1 },
+      { mult: 4.02, badCount: 2 },
+      { mult: 6.71, badCount: 2 },
+      { mult: 11.18, badCount: 2 },
+      { mult: 27.97, badCount: 3 },
+      { mult: 69.93, badCount: 3 },
+      { mult: 349.68, badCount: 4 }
+    ];
+
+    let userBalance = 1000;
+    let currentBet = 0;
+    let currentRow = 0;
+    let isGameRunning = false;
+    let boardData = [];
+
+    const boardEl = document.getElementById('board');
+    const balanceEl = document.getElementById('balance');
+    const betInput = document.getElementById('betAmount');
+    const mainBtn = document.getElementById('mainBtn');
+    const statusMsg = document.getElementById('statusMsg');
+
+    // إنشاء الشبكة الأولية
+    function createBoardUI() {
+      boardEl.innerHTML = '';
+      ROW_CONFIGS.forEach((config, rIndex) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.id = `row-${rIndex}`;
+
+        const mult = document.createElement('div');
+        mult.className = 'multiplier';
+        mult.innerText = `x${config.mult}`;
+
+        const cells = document.createElement('div');
+        cells.className = 'cells';
+
+        for (let cIndex = 0; cIndex < 5; cIndex++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.row = rIndex;
+          cell.dataset.col = cIndex;
+          cell.addEventListener('click', () => onCellClick(rIndex, cIndex));
+          cells.appendChild(cell);
+        }
+
+        row.appendChild(mult);
+        row.appendChild(cells);
+        boardEl.appendChild(row);
+      });
+    }
+
+    // توليد خريطة التفاح في كل صف عشوائياً
+    function generateBoardData() {
+      boardData = ROW_CONFIGS.map(cfg => {
+        let items = [true, true, true, true, true]; // true = تفاحة سليمة
+        // توزيع التفاح الفاسد (false) عشوائياً
+        let badPlaced = 0;
+        while (badPlaced < cfg.badCount) {
+          let idx = Math.floor(Math.random() * 5);
+          if (items[idx] !== false) {
+            items[idx] = false;
+            badPlaced++;
+          }
+        }
+        return items;
+      });
+    }
+
+    function startGame() {
+      const bet = parseFloat(betInput.value);
+      if (isNaN(bet) || bet <= 0 || bet > userBalance) {
+        statusMsg.innerText = "رصيدك غير كافٍ أو قيمة الرهان غير صحيحة!";
+        statusMsg.style.color = "#ef4444";
+        return;
+      }
+
+      userBalance -= bet;
+      currentBet = bet;
+      updateBalance();
+
+      isGameRunning = true;
+      currentRow = 0;
+      generateBoardData();
+      createBoardUI();
+
+      betInput.disabled = true;
+      mainBtn.innerText = "سحب الأرباح (0 ج.م)";
+      mainBtn.className = "action-btn btn-cashout";
+      mainBtn.disabled = true; // غير مفعل حتى يتجاوز أول صف
+      statusMsg.innerText = "اختر خانة من الصف الأول!";
+      statusMsg.style.color = "#fff";
+
+      highlightActiveRow();
+    }
+
+    function highlightActiveRow() {
+      document.querySelectorAll('.row').forEach((r, idx) => {
+        r.classList.remove('active');
+        if (idx === currentRow) {
+          r.classList.add('active');
+        }
+      });
+    }
+
+    function onCellClick(rIndex, cIndex) {
+      if (!isGameRunning || rIndex !== currentRow) return;
+
+      const isGood = boardData[rIndex][cIndex];
+      const rowEl = document.getElementById(`row-${rIndex}`);
+      const cellEl = rowEl.querySelectorAll('.cell')[cIndex];
+
+      if (isGood) {
+        // تفاحة سليمة
+        cellEl.innerText = "🍏";
+        cellEl.classList.add('revealed-good');
+        rowEl.classList.remove('active');
+        rowEl.classList.add('completed');
+
+        const currentWinnings = (currentBet * ROW_CONFIGS[currentRow].mult).toFixed(2);
+        mainBtn.disabled = false;
+        mainBtn.innerText = `سحب الأرباح (${currentWinnings} ج.م)`;
+
+        currentRow++;
+        if (currentRow >= ROW_CONFIGS.length) {
+          // الفوز باللعبة كاملة
+          cashOut();
+        } else {
+          highlightActiveRow();
+          statusMsg.innerText = `رائع! انتقل للصف ${currentRow + 1}`;
+          statusMsg.style.color = "#22c55e";
+        }
+      } else {
+        // تفاحة فاسدة - خسارة
+        cellEl.innerText = "🍎"; // أو نواة تفاح
+        cellEl.classList.add('revealed-bad');
+        revealFullRow(rIndex);
+        gameOver();
+      }
+    }
+
+    function revealFullRow(rIndex) {
+      const rowEl = document.getElementById(`row-${rIndex}`);
+      const cells = rowEl.querySelectorAll('.cell');
+      boardData[rIndex].forEach((val, i) => {
+        cells[i].innerText = val ? "🍏" : "🍎";
+        cells[i].classList.add(val ? 'revealed-good' : 'revealed-bad');
+      });
+    }
+
+    function cashOut() {
+      if (!isGameRunning || currentRow === 0) return;
+      const winnings = parseFloat((currentBet * ROW_CONFIGS[currentRow - 1].mult).toFixed(2));
+      userBalance += winnings;
+      updateBalance();
+      statusMsg.innerText = `مبروك! ربحت ${winnings} ج.م! 🎉`;
+      statusMsg.style.color = "#ffd700";
+      resetGameControls();
+    }
+
+    function gameOver() {
+      statusMsg.innerText = "للأسف تفاحة فاسدة! حظ أوفر في المرة القادمة.";
+      statusMsg.style.color = "#ef4444";
+      resetGameControls();
+    }
+
+    function resetGameControls() {
+      isGameRunning = false;
+      betInput.disabled = false;
+      mainBtn.disabled = false;
+      mainBtn.innerText = "ابدأ اللعب";
+      mainBtn.className = "action-btn btn-start";
+      document.querySelectorAll('.row').forEach(r => r.classList.remove('active'));
+    }
+
+    function updateBalance() {
+      balanceEl.innerText = userBalance.toFixed(2);
+    }
+
+    mainBtn.addEventListener('click', () => {
+      if (!isGameRunning) {
+        startGame();
+      } else {
+        cashOut();
+      }
+    });
+
+    // التهيئة الأولى
+    createBoardUI();
+  </script>
+</body>
+</html>
